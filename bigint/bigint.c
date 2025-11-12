@@ -39,7 +39,8 @@ static uint32_t bigint_2_pow_32_pow_n_mod_10(uint32_t n) {
 }
 
 /* If the length of the digits portion of the buffer was changed, use this
- * function to resize the scratch space to digits_length + 1.
+ * function to resize the scratch space to a length of digits_length + 1 or
+ * greater.
  * ErrNullPtr: if bigint is NULL.
  * ErrAllocFailed: if unable to allocate more memory.
  */
@@ -112,13 +113,50 @@ Err bigint_set_value_simple(BigInt* bigint, int32_t simple_value) {
 	return ErrGood;
 }
 
+typedef struct DivisionResult2Digit {
+	uint32_t most_sig_quotient;
+	uint32_t least_sig_quotient;
+	uint32_t remainder;
+} DivisionResult2Digit;
+
+/* Divides the number most_sig . least_sig (where . is concatination) by 10 and
+ * returns the quotient and remainder.
+ */
+static DivisionResult2Digit bigint_2_digit_div_10(uint32_t most_sig, uint32_t least_sig) {
+	DivisionResult2Digit ret = { 0 };
+	
+	ret.most_sig_quotient = most_sig / 10;
+	uint32_t first_remainder = most_sig % 10;
+
+	// how do you divide digit_a digit_b by 10?
+
+	return ret;
+}
+
 Err bigint_to_base10_string(
 		const* BigInt* bigint, 
 		char* out, 
 		uint64_t max_out_len) {
 	if (!bigint || !out) return ErrNullPtr;
 	
+	// implements long division.
+	// if a is the value of the bigint, 10x+m = 0 mod 10, and 10x+m=a
+
+	// we start at the end, since bigint->digits[0] is the least
+	// significant digit.
+	uint64_t digit_pos = bigint->digits_length - 1;
 	
+	uint32_t current_digit = bigint->digits[digit_pos];
+	uint32_t scratch_pos = 0
+	if (current_digit >= 10) {
+		// we don't have to carry over anything. just divide and 
+		// subtract the remainder.
+		uint32_t quotient = current_digit / 10;
+		uint32_t remainder = current_digit % 10;
+
+		bigint->scratch_space[scratch_pos] = quotient;
+
+	}
 
 	return ErrGood;
 }
