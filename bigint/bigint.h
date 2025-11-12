@@ -34,10 +34,9 @@ Err bigint_init(BigInt* bigint);
  */
 Err bigint_set_value_simple(BigInt* bigint, int32_t simple_value);
 
-Err bigint_copy(BigInt* dest, const BigInt* src); 
-
 /* Converts a BigInt to a base 10 string representation.
  * ErrNullPtr: if bigint, out is NULL.
+ * ErrInvalidParameter: if max_out_len < 2.
  */
 Err bigint_to_base10_string(
 		const* BigInt* bigint, 

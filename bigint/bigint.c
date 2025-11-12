@@ -1,42 +1,7 @@
+#include <stdlib.h>
+#include <string.h>
+
 #include "bigint.h"
-
-// 2^32 congruent 6 mod 10.
-const uint32_t TWO_POW_32_MOD_10 = 6;
-
-// Returns (2^32)^n mod 10
-static uint32_t bigint_2_pow_32_pow_n_mod_10(uint32_t n) {
-	if (n == 0) return 1;
-	if (n == 1) return TWO_POW_32_MOD_10;
-	
-	uint32_t ret = TWO_POW_32_MOD_10;
-	// first, we notice that (2^32) ^ n % 10 = 6 ^ n % 10
-	// Next, we note that 6 % 10 = 6, and that 6^2 % 10 = 6.
-	// Next, notice that we can break down (2^32) ^ n into
-	// (2^32) ^ a32 * (2^32) ^ a31 * ... (2^32) ^ a0
-	// where a_n is 2^n if the nth bit is 1, and 0 otherwise.
-	// For example, (2^32)^0b10010 is equal to
-	// (2^32) ^ 0 * 
-	// (2^32) ^ (2^1) * 
-	// (2^32) ^ 0 * 
-	// (2^32) ^ 0 * 
-	// (2^32) ^ (2^4)
-	// 
-	// Therefore, to compute (2^32)^n % 10 is equivalent to computing
-	// (6 ^ 0 *
-	// 6 ^ 2 *
-	// 6 ^ 0 *
-	// 6 ^ 0 *
-	// 6 ^ 16) mod 10
-	// By substituting in 6 = (2^32) % 10
-	// Now, notice that 6 % 10 = 6, and 6^2 % 10 = 6.
-	// That means that for any k > 0, 6^k = 1, since multiplying 6 by itself
-	// always results in 6. If k = 0, 6^0 = 1, so that just drops out of the
-	// above expression. That means we can simplify the above expression to
-	// to
-	// 6 * 6 % 10 = 6
-	//
-	
-}
 
 /* If the length of the digits portion of the buffer was changed, use this
  * function to resize the scratch space to a length of digits_length + 1 or
@@ -114,8 +79,8 @@ Err bigint_set_value_simple(BigInt* bigint, int32_t simple_value) {
 }
 
 typedef struct DivisionResult2Digit {
-	uint32_t most_sig_quotient;
-	uint32_t least_sig_quotient;
+	uint32_t high;
+	uint32_t low;
 	uint32_t remainder;
 } DivisionResult2Digit;
 
@@ -125,12 +90,37 @@ typedef struct DivisionResult2Digit {
 static DivisionResult2Digit bigint_2_digit_div_10(uint32_t most_sig, uint32_t least_sig) {
 	DivisionResult2Digit ret = { 0 };
 	
-	ret.most_sig_quotient = most_sig / 10;
-	uint32_t first_remainder = most_sig % 10;
-
-	// how do you divide digit_a digit_b by 10?
+	uint64_t converted = (((uint64_t)most_sig) << 32) + ((uint32_t)least_sig);
+	ret.remainder = (uint32_t)(converted % 10);
+	converted /= 10;
+	
+	ret.high = (uint32_t)(converted >> 32);
+	ret.low = (uint32_t)(converted & 0xFFFFFFFF);
 
 	return ret;
+}
+
+static uint32_t bigint_divide_scratch_space_10(Bigint* bigint, uint64_t* number_length) {
+	uint64_t pos = 0;
+	uint32_t remainder = 0;
+	
+	while (pos < *number_length) {
+		DivisionResult2Digit result = bigint_2_digit_div_10(
+				remainder, 
+				bigint->scratch_space[pos]);
+		remainder = result.remainder;
+		bigint->scratch_space[pos] = result.low;
+		pos++;
+	}
+	
+	// check to see if the length of the number decreased.
+	if (bigint->scratch_space[0] == 0) {
+		(*number_length)--;
+		// make sure to move the quotient so it starts at scratch_space[0]
+		memmove(bigint->scratch_space, &(bigint->scratch_space[1]), output_length);
+	}
+
+	return remainder;
 }
 
 Err bigint_to_base10_string(
@@ -138,25 +128,35 @@ Err bigint_to_base10_string(
 		char* out, 
 		uint64_t max_out_len) {
 	if (!bigint || !out) return ErrNullPtr;
-	
-	// implements long division.
-	// if a is the value of the bigint, 10x+m = 0 mod 10, and 10x+m=a
+	if (max_out_len < 2) return ErrInvalidParameter;
 
-	// we start at the end, since bigint->digits[0] is the least
-	// significant digit.
-	uint64_t digit_pos = bigint->digits_length - 1;
-	
-	uint32_t current_digit = bigint->digits[digit_pos];
-	uint32_t scratch_pos = 0
-	if (current_digit >= 10) {
-		// we don't have to carry over anything. just divide and 
-		// subtract the remainder.
-		uint32_t quotient = current_digit / 10;
-		uint32_t remainder = current_digit % 10;
+	// first we copy the number to the scratch space to prepare to call 
+	// bigint_divide_scratch_space_10
+	memcpy(bigint->scratch_space, bigint->digits, bigint->digits_length);
 
-		bigint->scratch_space[scratch_pos] = quotient;
+	uint64_t current_length = bigint->digits_length;
+	// make sure to set the null byte.
+	out[max_out_len - 1] = 0;
+	// we need to go backwards since we get the least sig. digits first.
+	uint64_t out_pos = max_out_len - 2;
 
+	// we start with 1 since we include the null byte at the end.
+	uint64_t characters_pushed = 1;
+
+	// divide until the length of the number reaches 0, meaning we are done.
+	while (current_length >= 1) {
+		uint32_t digit = bigint_divide_scratch_space_10(bigint, &current_length);
+		out[out_pos] = '0' + (char)(digit);
+		characters_pushed++;
+
+		// check if we ran out of space.
+		if (out_pos == 0) break;
+		out_pos--;
 	}
+
+	// make sure we move the string to the beginning, since we started at
+	// the end first.
+	memmove(out, &(out[out_pos]), (size_t)characters_pushed);
 
 	return ErrGood;
 }
