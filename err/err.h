@@ -4,7 +4,9 @@
 typedef enum Err {
 	ErrGood,
 	ErrNullPtr,
-	ErrAllocFailed
+	ErrAllocFailed,
+	ErrInvalidParameter,
+	ErrInternal
 };
 
 #endif
